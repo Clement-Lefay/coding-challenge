@@ -117,16 +117,16 @@ module.exports = (logSources, printer) => {
     printer.done();
     /**
      * Remarks
-     * the current implementation cannot pass more than "10 000" logSources due to lack of memory on my machine
+     * the current implementation cannot pass more than "13 000" logSources due to lack of memory
      * here are the result of 1 run
-        drainLog_async: 22915.214ms
-        heap_sort_async: 9612.400ms
-        print_async: 1714.755ms
+        drain_log_async: 44530.759ms
+        heap_sort_async: 13551.002ms
+        print_async: 2288.748ms
 
         ***********************************
-        Logs printed:            2389847
-        Time taken (s):          1.715
-        Logs/s:                  1393496.7930029153
+        Logs printed:            3115871
+        Time taken (s):          2.288
+        Logs/s:                  1361831.730769231
         ***********************************
 
      */

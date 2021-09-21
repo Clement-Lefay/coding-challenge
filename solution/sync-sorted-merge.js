@@ -2,20 +2,21 @@
 
 // Heap Sort Algo - originaly fom (https://www.educba.com/sorting-algorithms-in-javascript/)
 let arrLength;
-function heapRoot(items, i, mirrorItems) {
+function heapRoot(items, i) {
   const left = 2 * i + 1;
   const right = 2 * i + 2;
   let max = i;
-  if (left < arrLength && items[left] > items[max]) {
+  // adapte the condition to match the date as comparator
+  if (left < arrLength && items[left].date > items[max].date) {
     max = left;
   }
-  if (right < arrLength && items[right] > items[max]) {
+  // adapte the condition to match the date as comparator
+  if (right < arrLength && items[right].date > items[max].date) {
     max = right;
   }
   if (max != i) {
     swap(items, i, max);
-    swap(mirrorItems, i, max);
-    heapRoot(items, max, mirrorItems);
+    heapRoot(items, max);
   }
 }
 
@@ -25,18 +26,17 @@ function swap(items, index_A, index_B) {
   items[index_B] = temp;
 }
 
-function heapSortAlgo(items, mirrorItems) {
+function heapSortAlgo(items) {
   // console.log("- heap sort start");
   arrLength = items.length;
   for (let i = Math.floor(arrLength / 2); i >= 0; i -= 1) {
-    heapRoot(items, i, mirrorItems);
+    heapRoot(items, i);
   }
 
   for (let j = items.length - 1; j > 0; j--) {
     swap(items, 0, j);
-    swap(mirrorItems, 0, j);
     arrLength--;
-    heapRoot(items, 0, mirrorItems);
+    heapRoot(items, 0);
   }
   // console.log("- Heap sort done!");
 }
@@ -53,12 +53,9 @@ module.exports = (logSources, printer) => {
   /**
    * for each logSources
    *  call the pop()
-   *  push the date in dateList (convert to getTime())
-   *  push de message in msgList
-   * Like this, both date and message will share the same index
+   *  push the log into logList (and cast the date into number with getTime())
    *
-   * Once we have these 2 lists, we are sorting the dateList using the Heap Sort Algo
-   *  when the index of the dateList will be swaped, the index of msgList will also be swaped
+   * Once we have this list, we are sorting the logList using the Heap Sort Algo
    *
    * For each date, print the result
    */
@@ -66,36 +63,53 @@ module.exports = (logSources, printer) => {
     return console.log("Please provide a real list of source, this one is empty!");
   }
 
-  const dateList = [];
-  const msgList = [];
+  const logList = [];
 
   // extract all logs per LogSource
+  console.time("drain_log_sync");
   for (let logSourceIndex = 0; logSourceIndex < logSources.length; logSourceIndex++) {
     let log = undefined;
     while ((log = logSources[logSourceIndex].pop())) {
       // Turn the date into number for easier storage and comparison between date later on
-      dateList.push(log.date.getTime());
-      msgList.push(log.msg);
+      logList.push({
+        date: log.date.getTime(),
+        msg: log.msg,
+      });
     }
   }
+  console.timeEnd("drain_log_sync");
 
   // Sort the datetime chronologycaly
-  heapSortAlgo(dateList, msgList);
+  console.time("heap_sort_sync");
+  heapSortAlgo(logList);
+  console.timeEnd("heap_sort_sync");
 
   // Print each log with the matching
-  for (let dateIndex = 0; dateIndex < dateList.length; dateIndex++) {
-    // Need to cast the value in the dateList to a proper Date format
+  console.time("print_sync");
+  for (let dateIndex = 0; dateIndex < logList.length; dateIndex++) {
+    // Need to cast the value in the logList to a proper Date format
     printer.print({
-      date: new Date(dateList[dateIndex]),
-      msg: msgList[dateIndex],
+      date: new Date(logList[dateIndex].date),
+      msg: logList[dateIndex].msg,
     });
   }
+  console.timeEnd("print_sync");
 
   printer.done();
   /**
    * Remarks
-   * It appears this algo cannot handled the "100000" logSources due to lack of memory and the heapSort was not even started
-   * One way to improve would be to push the log object diretly, instad of splitting it up in 2
+   * It appears this algo cannot do more than "40 000" logSources due to lack of memory and the heapSort was not even started
+   * here are one of the best result I have with 40 000:
+      drain_log_sync: 11606.216ms
+      heap_sort_sync: 64032.961ms
+      print_sync: 9980.965ms
+
+      ***********************************
+      Logs printed:            9579268
+      Time taken (s):          9.981
+      Logs/s:                  959750.3256186754
+      ***********************************
+
    */
   return console.log("Sync sort complete.");
 };
