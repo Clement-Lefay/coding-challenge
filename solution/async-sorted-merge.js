@@ -83,7 +83,6 @@ module.exports = (logSources, printer) => {
     }
 
     // get all logs
-    console.time("drain_log_async");
     try {
       // Here we are loading each logSource into a promise that is stored in the concurrentPromises
       let concurrentPromises = [];
@@ -97,14 +96,10 @@ module.exports = (logSources, printer) => {
       console.error("Something went wrong :/ ", error);
       reject(error);
     }
-    console.timeEnd("drain_log_async");
 
-    console.time("heap_sort_async");
     // sort them chronologicaly
     heapSortAlgo(logList);
-    console.timeEnd("heap_sort_async");
 
-    console.time("print_async");
     // print
     for (let logIndex = 0; logIndex < logList.length; logIndex++) {
       printer.print({
@@ -112,7 +107,6 @@ module.exports = (logSources, printer) => {
         msg: logList[logIndex].msg,
       });
     }
-    console.timeEnd("print_async");
 
     printer.done();
     /**

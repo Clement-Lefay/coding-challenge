@@ -27,7 +27,6 @@ function swap(items, index_A, index_B) {
 }
 
 function heapSortAlgo(items) {
-  // console.log("- heap sort start");
   arrLength = items.length;
   for (let i = Math.floor(arrLength / 2); i >= 0; i -= 1) {
     heapRoot(items, i);
@@ -38,7 +37,6 @@ function heapSortAlgo(items) {
     arrLength--;
     heapRoot(items, 0);
   }
-  // console.log("- Heap sort done!");
 }
 
 // Print all entries, across all of the sources, in chronological order.
@@ -66,7 +64,6 @@ module.exports = (logSources, printer) => {
   const logList = [];
 
   // extract all logs per LogSource
-  console.time("drain_log_sync");
   for (let logSourceIndex = 0; logSourceIndex < logSources.length; logSourceIndex++) {
     let log = undefined;
     while ((log = logSources[logSourceIndex].pop())) {
@@ -77,15 +74,11 @@ module.exports = (logSources, printer) => {
       });
     }
   }
-  console.timeEnd("drain_log_sync");
 
   // Sort the datetime chronologycaly
-  console.time("heap_sort_sync");
   heapSortAlgo(logList);
-  console.timeEnd("heap_sort_sync");
 
   // Print each log with the matching
-  console.time("print_sync");
   for (let dateIndex = 0; dateIndex < logList.length; dateIndex++) {
     // Need to cast the value in the logList to a proper Date format
     printer.print({
@@ -93,7 +86,6 @@ module.exports = (logSources, printer) => {
       msg: logList[dateIndex].msg,
     });
   }
-  console.timeEnd("print_sync");
 
   printer.done();
   /**
