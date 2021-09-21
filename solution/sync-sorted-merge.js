@@ -1,73 +1,101 @@
 "use strict";
 
+// Heap Sort Algo - originaly fom (https://www.educba.com/sorting-algorithms-in-javascript/)
+let arrLength;
+function heapRoot(items, i, mirrorItems) {
+  const left = 2 * i + 1;
+  const right = 2 * i + 2;
+  let max = i;
+  if (left < arrLength && items[left] > items[max]) {
+    max = left;
+  }
+  if (right < arrLength && items[right] > items[max]) {
+    max = right;
+  }
+  if (max != i) {
+    swap(items, i, max);
+    swap(mirrorItems, i, max);
+    heapRoot(items, max, mirrorItems);
+  }
+}
+
+function swap(items, index_A, index_B) {
+  var temp = items[index_A];
+  items[index_A] = items[index_B];
+  items[index_B] = temp;
+}
+
+function heapSortAlgo(items, mirrorItems) {
+  // console.log("- heap sort start");
+  arrLength = items.length;
+  for (let i = Math.floor(arrLength / 2); i >= 0; i -= 1) {
+    heapRoot(items, i, mirrorItems);
+  }
+
+  for (let j = items.length - 1; j > 0; j--) {
+    swap(items, 0, j);
+    swap(mirrorItems, 0, j);
+    arrLength--;
+    heapRoot(items, 0, mirrorItems);
+  }
+  // console.log("- Heap sort done!");
+}
+
 // Print all entries, across all of the sources, in chronological order.
 
 module.exports = (logSources, printer) => {
-  // for each logSources
-  // * pop the source until it is depleted (return false)
-  // * add the date to the object, as a key, and push the msg into the value, that is an array
+  /**
+   * we have logsources, a list of logSource
+   * 1 logsource can have a lot of logs
+   * 1 log have 1 msg and 1 date
+   */
 
-  const logMap = {};
+  /**
+   * for each logSources
+   *  call the pop()
+   *  push the date in dateList (convert to getTime())
+   *  push de message in msgList
+   * Like this, both date and message will share the same index
+   *
+   * Once we have these 2 lists, we are sorting the dateList using the Heap Sort Algo
+   *  when the index of the dateList will be swaped, the index of msgList will also be swaped
+   *
+   * For each date, print the result
+   */
+  if (!logSources) {
+    return console.log("Please provide a real list of source, this one is empty!");
+  }
 
-  for (let i = 0; i < logSources.length; i++) {
-    const logSource = logSources[i];
-    let logSourceNotDrained = true;
+  const dateList = [];
+  const msgList = [];
 
-    while (logSourceNotDrained === true) {
-      // pop the source
-      const entry = logSource.pop();
-      // check if the logSource is ended or not
-      if (entry !== false) {
-        const rawDate = entry.date.toJSON();
-        const date = rawDate.split("T")[0];
-        const dateTime = entry.date.getTime();
-        // check if new date to save
-        if (!logMap[date]) {
-          logMap[date] = {
-            [dateTime]: entry.msg,
-          };
-        } else {
-          logMap[date][dateTime] = entry.msg;
-          // // check if there is already something at this time
-          // if (!logMap[date][dateTime]) {
-          // logMap[date][dateTime] = [entry.msg];
-          // }
-          // Would handled the case where different logs are generated at the same time
-          //  else {
-          //   // same day and same time, we add the message
-          //   logMap[date][dateTime] = [...logMap[date][dateTime], entry.msg];
-          // }
-        }
-      } else {
-        // there is no more entry, stop the loop
-        logSourceNotDrained = false;
-      }
+  // extract all logs per LogSource
+  for (let logSourceIndex = 0; logSourceIndex < logSources.length; logSourceIndex++) {
+    let log = undefined;
+    while ((log = logSources[logSourceIndex].pop())) {
+      // Turn the date into number for easier storage and comparison between date later on
+      dateList.push(log.date.getTime());
+      msgList.push(log.msg);
     }
   }
-  // console.log(logMap);
 
-  // sort by key (= date) and turn it to an array
-  const sortedDateLogMap = Object.entries(logMap).sort(([dateA, dateTimesA], [dateB, dateTimesB]) => new Date(dateA) - new Date(dateB));
+  // Sort the datetime chronologycaly
+  heapSortAlgo(dateList, msgList);
 
-  // console.log(sortedDateLogMap);
-
-  // for each date, sort by time, rebuild an object that the print function can manipulate
-  for (let j = 0; j < sortedDateLogMap.length; j++) {
-    // console.log(sortedDateLogMap[j][1]);
-    const currentDate = sortedDateLogMap[j][0];
-    const sortedTimeLog = Object.entries(sortedDateLogMap[j][1]).sort(([timeA, msgA], [timeB, msgB]) => new Date(+timeA) - new Date(+timeB));
-    // console.log(sortedTimeLog);
-    // console.log(" ");
-
-    for (let k = 0; k < sortedTimeLog.length; k++) {
-      const entryLog = {
-        date: new Date(+sortedTimeLog[k][0]),
-        msg: sortedTimeLog[k][1],
-      };
-      printer.print(entryLog);
-    }
+  // Print each log with the matching
+  for (let dateIndex = 0; dateIndex < dateList.length; dateIndex++) {
+    // Need to cast the value in the dateList to a proper Date format
+    printer.print({
+      date: new Date(dateList[dateIndex]),
+      msg: msgList[dateIndex],
+    });
   }
 
   printer.done();
+  /**
+   * Remarks
+   * It appears this algo cannot handled the "100000" logSources due to lack of memory and the heapSort was not even started
+   * One way to improve would be to push the log object diretly, instad of splitting it up in 2
+   */
   return console.log("Sync sort complete.");
 };
