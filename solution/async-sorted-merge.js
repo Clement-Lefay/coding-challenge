@@ -51,10 +51,14 @@ module.exports = (logSources, printer) => {
     const drainSourceLog = async (logSource) => {
       const log = await logSource.popAsync();
       if (log) {
-        // Create a file with these informations
-        await fs.writeFile(`${tmpPath}/${log.date.getTime()}.txt`, log.msg);
-        // look for the next log
-        return await drainSourceLog(logSource);
+        try {
+          // Create a file with these informations
+          await fs.writeFile(`${tmpPath}/${log.date.getTime()}.txt`, log.msg);
+          // look for the next log
+          return await drainSourceLog(logSource);
+        } catch (error) {
+          console.log(error);
+        }
       } else {
         return log;
       }
