@@ -1,17 +1,17 @@
 "use strict";
 
+const fs = require("fs");
+
 // Heap Sort Algo - originaly fom (https://www.educba.com/sorting-algorithms-in-javascript/)
 let arrLength;
 function heapRoot(items, i) {
   const left = 2 * i + 1;
   const right = 2 * i + 2;
   let max = i;
-  // adapte the condition to match the date as comparator
-  if (left < arrLength && items[left].date > items[max].date) {
+  if (left < arrLength && items[left] > items[max]) {
     max = left;
   }
-  // adapte the condition to match the date as comparator
-  if (right < arrLength && items[right].date > items[max].date) {
+  if (right < arrLength && items[right] > items[max]) {
     max = right;
   }
   if (max != i) {
@@ -27,6 +27,7 @@ function swap(items, index_A, index_B) {
 }
 
 function heapSortAlgo(items) {
+  console.time("heap_sort_sync")
   arrLength = items.length;
   for (let i = Math.floor(arrLength / 2); i >= 0; i -= 1) {
     heapRoot(items, i);
@@ -37,71 +38,99 @@ function heapSortAlgo(items) {
     arrLength--;
     heapRoot(items, 0);
   }
+  console.timeEnd("heap_sort_sync")
 }
 
 // Print all entries, across all of the sources, in chronological order.
 
 module.exports = (logSources, printer) => {
   /**
-   * we have logsources, a list of logSource
-   * 1 logsource can have a lot of logs
-   * 1 log have 1 msg and 1 date
+   * create a tmp folder
+   *
+   * go through each sources and create a new file for each source with the property:
+   *  with the name = date in number format (date.getTime())
+   *  content = the msg
+   *
+   * identify all the files sort them by aplying the Heap Sort with the fileName
+   *
+   * read all the files in this folder and apply the printer.print with the fileName and the content
+   *
+   * delete the tmp folder
    */
 
-  /**
-   * for each logSources
-   *  call the pop()
-   *  push the log into logList (and cast the date into number with getTime())
-   *
-   * Once we have this list, we are sorting the logList using the Heap Sort Algo
-   *
-   * For each date, print the result
-   */
   if (!logSources) {
     return console.log("Please provide a real list of source, this one is empty!");
   }
 
-  const logList = [];
+  const tmpPath = "./tmp";
+  // create new directory
+  try {
+    // first check if directory already exists
+    if (!fs.existsSync(tmpPath)) {
+      fs.mkdirSync(tmpPath);
+      console.log("Directory is created.");
+    } else {
+      console.log("Directory already exists.");
+    }
+  } catch (err) {
+    console.error(err);
+  }
 
-  // extract all logs per LogSource
+  console.time("drain_log_sync")
+  // extract all logs per LogSource and create a file for each log, using the date as a fileName
   for (let logSourceIndex = 0; logSourceIndex < logSources.length; logSourceIndex++) {
     let log = undefined;
     while ((log = logSources[logSourceIndex].pop())) {
       // Turn the date into number for easier storage and comparison between date later on
-      logList.push({
-        date: log.date.getTime(),
-        msg: log.msg,
+      fs.writeFileSync(`${tmpPath}/${log.date.getTime()}.txt`, log.msg);
+    }
+  }
+  console.timeEnd("drain_log_sync")
+
+  // read all files in the tmp folder
+  const files = fs.readdirSync(tmpPath);
+
+  // Sort the datetime chronologycaly
+  heapSortAlgo(files);
+
+  // Print content of the all log files
+  for (let dateIndex = 0; dateIndex < files.length; dateIndex++) {
+    try {
+      const data = fs.readFileSync(`${tmpPath}/${files[dateIndex]}`, "utf-8");
+      // Need to cast the fileName from string to a number that the Date can convert
+      printer.print({
+        date: new Date(+files[dateIndex].split(".")[0]),
+        msg: data,
       });
+    } catch (error) {
+      console.error(error);
     }
   }
 
-  // Sort the datetime chronologycaly
-  heapSortAlgo(logList);
-
-  // Print each log with the matching
-  for (let dateIndex = 0; dateIndex < logList.length; dateIndex++) {
-    // Need to cast the value in the logList to a proper Date format
-    printer.print({
-      date: new Date(logList[dateIndex].date),
-      msg: logList[dateIndex].msg,
-    });
-  }
-
   printer.done();
+
+  // remove the directory
+  fs.rmdirSync(tmpPath, { recursive: true });
+  console.log(`${tmpPath} is deleted!`);
+
+  return console.log("Sync sort complete.");
   /**
    * Remarks
-   * It appears this algo cannot do more than "40 000" logSources due to lack of memory and the heapSort was not even started
-   * here are one of the best result I have with 40 000:
-      drain_log_sync: 11606.216ms
-      heap_sort_sync: 64032.961ms
-      print_sync: 9980.965ms
+   * Using the file system (write and read) make the process ultimately slow!
+   * Honeslty, I have no idea if this way is the most efficient, but at least the memory seems to be better with this one
+   *
+    * here are one of the best result I have with 40 000 (no FS):
+      -      drain_log_sync: 11606.216ms
+      -      heap_sort_sync: 64032.961ms
+      -      print_sync: 9980.965ms
+      -
+      -      ***********************************
+      -      Logs printed:            9579268
+      -      Time taken (s):          9.981
+      -      Logs/s:                  959750.3256186754
+      -      ***********************************
 
-      ***********************************
-      Logs printed:            9579268
-      Time taken (s):          9.981
-      Logs/s:                  959750.3256186754
-      ***********************************
+      -  
 
    */
-  return console.log("Sync sort complete.");
 };
