@@ -27,7 +27,7 @@ function swap(items, index_A, index_B) {
 }
 
 function heapSortAlgo(items) {
-  console.time("heap_sort_sync")
+  console.time("heap_sort_sync");
   arrLength = items.length;
   for (let i = Math.floor(arrLength / 2); i >= 0; i -= 1) {
     heapRoot(items, i);
@@ -38,7 +38,7 @@ function heapSortAlgo(items) {
     arrLength--;
     heapRoot(items, 0);
   }
-  console.timeEnd("heap_sort_sync")
+  console.timeEnd("heap_sort_sync");
 }
 
 // Print all entries, across all of the sources, in chronological order.
@@ -76,7 +76,7 @@ module.exports = (logSources, printer) => {
     console.error(err);
   }
 
-  console.time("drain_log_sync")
+  console.time("drain_log_sync");
   // extract all logs per LogSource and create a file for each log, using the date as a fileName
   for (let logSourceIndex = 0; logSourceIndex < logSources.length; logSourceIndex++) {
     let log = undefined;
@@ -85,7 +85,7 @@ module.exports = (logSources, printer) => {
       fs.writeFileSync(`${tmpPath}/${log.date.getTime()}.txt`, log.msg);
     }
   }
-  console.timeEnd("drain_log_sync")
+  console.timeEnd("drain_log_sync");
 
   // read all files in the tmp folder
   const files = fs.readdirSync(tmpPath);
@@ -117,6 +117,7 @@ module.exports = (logSources, printer) => {
   /**
    * Remarks
    * Using the file system (write and read) make the process ultimately slow!
+   * Even with just 10000....
    * Honeslty, I have no idea if this way is the most efficient, but at least the memory seems to be better with this one
    *
     * here are one of the best result I have with 40 000 (no FS):

@@ -66,8 +66,7 @@ module.exports = (logSources, printer) => {
      * so the idea is the same as before
      *  create a tmp folder
      *
-     *  extract all logs, concurrently is possible, and create 1 file for each
-     *    like for K amount, where K is te number of logSources
+     *  extract all logs, concurrently is not possible when writting files, and create 1 file for each
      *
      *  get the list of files
      *
@@ -99,7 +98,7 @@ module.exports = (logSources, printer) => {
       }
       // fire all stored promises in concurrency for a quick response
       // No need to worry about the logList, the drainSourceLog is taking care or updating it
-      await P.map(concurrentPromises, () => {}, { concurrency: logSources.length });
+      await P.map(concurrentPromises, () => {});
     } catch (error) {
       console.error("Something went wrong :/ ", error);
       reject(error);
