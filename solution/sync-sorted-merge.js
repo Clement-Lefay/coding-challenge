@@ -2,44 +2,87 @@
 
 const fs = require("fs");
 
-// Heap Sort Algo - originaly fom (https://www.educba.com/sorting-algorithms-in-javascript/)
-let arrLength;
-function heapRoot(items, i) {
-  const left = 2 * i + 1;
-  const right = 2 * i + 2;
-  let max = i;
-  if (left < arrLength && items[left] > items[max]) {
-    max = left;
-  }
-  if (right < arrLength && items[right] > items[max]) {
-    max = right;
-  }
-  if (max != i) {
-    swap(items, i, max);
-    heapRoot(items, max);
-  }
-}
+// Have to update the heapSort algo in order to be reused multiple times
+//Source:https://bit.ly/3hEZdCl
+/**
+ * Based on HeapSort and adapted to manipulate object that has a "date" key
+ * @param {array<Object>} arr
+ * @returns sortedArray
+ */
+const heapSortByDate = (arr) => {
+  const a = [...arr];
+  let arrLength = a.length;
 
-function swap(items, index_A, index_B) {
-  var temp = items[index_A];
-  items[index_A] = items[index_B];
-  items[index_B] = temp;
-}
+  const heapify = (a, i) => {
+    const left = 2 * i + 1;
+    const right = 2 * i + 2;
+    let max = i;
+    const leftDate = a[left] ? a[left].date : undefined;
+    const rightDate = a[right] ? a[right].date : undefined;
+    // Adapte to handle the date key
+    if (left < arrLength && leftDate > a[max].date) {
+      max = left;
+    }
+    // adapte to handle the date key
+    if (right < arrLength && rightDate > a[max].date) {
+      max = right;
+    }
+    if (max !== i) {
+      [a[max], a[i]] = [a[i], a[max]];
+      heapify(a, max);
+    }
+  };
 
-function heapSortAlgo(items) {
-  console.time("heap_sort_sync");
-  arrLength = items.length;
   for (let i = Math.floor(arrLength / 2); i >= 0; i -= 1) {
-    heapRoot(items, i);
+    heapify(a, i);
   }
 
-  for (let j = items.length - 1; j > 0; j--) {
-    swap(items, 0, j);
+  for (let j = a.length - 1; j > 0; j--) {
+    [a[0], a[j]] = [a[j], a[0]];
     arrLength--;
-    heapRoot(items, 0);
+    heapify(a, 0);
   }
-  console.timeEnd("heap_sort_sync");
-}
+
+  return a;
+};
+
+/**
+ * Sort the given array in ascending order
+ * @param {array} arr
+ * @returns sortedArray
+ */
+const heapSort = (arr) => {
+  const a = [...arr];
+  let arrLength = a.length;
+
+  const heapify = (a, i) => {
+    const left = 2 * i + 1;
+    const right = 2 * i + 2;
+    let max = i;
+    if (left < arrLength && a[left] > a[max]) {
+      max = left;
+    }
+    if (right < arrLength && a[right] > a[max]) {
+      max = right;
+    }
+    if (max !== i) {
+      [a[max], a[i]] = [a[i], a[max]];
+      heapify(a, max);
+    }
+  };
+
+  for (let i = Math.floor(arrLength / 2); i >= 0; i -= 1) {
+    heapify(a, i);
+  }
+
+  for (let j = a.length - 1; j > 0; j--) {
+    [a[0], a[j]] = [a[j], a[0]];
+    arrLength--;
+    heapify(a, 0);
+  }
+
+  return a;
+};
 
 // Print all entries, across all of the sources, in chronological order.
 
@@ -65,7 +108,7 @@ module.exports = (logSources, printer) => {
    *
    * Idea 3
    *  for each source
-   *    each log would create/update a file who will have a name in YYYYMMDD_HHMMSS,
+   *    each log would create/update a file who will have a name in  YYYYMMDD (originialy was YYYYMMDD_HHMMSS),
    *    this format will make it easier to controle the size of the file and do a pre sort
    *    The content of the log will be stringify() (include a coma at the end for limitation)
    *  Reflexion: seems to be a good balance of sorting and dispatching data
@@ -77,6 +120,15 @@ module.exports = (logSources, printer) => {
    *    And store the data in a unique file
    *  Reflexion: a more human friendly way to organiwe logs but it will not be efficient, too many folder and files to create
    *
+   * Idea 5
+   *  for each source
+   *    create a file where we will be writing all logs in a stream
+   *  Reflexion: Could be simple for small amount but for big quantity, the file will be too big and would need to be split
+   *
+   * Idea 6 (same as Idea 3 by using writeStream)
+   *  Reflexion: could be another way to improve the writing speed but we have to track all open stream to close them (not sure node close them automatically)
+   *
+   *
    * 2 sort them
    *  Depending of the solution, when the sort will be applied is different
    *
@@ -84,81 +136,135 @@ module.exports = (logSources, printer) => {
    *
    * delete the tmp folder
    */
+
+  if (!logSources) {
+    return console.log("Please provide a real list of source, this one is empty!");
+  }
+
+  const tmpPath = "./tmp";
+  // create new directory
+  try {
+    // first check if directory already exists
+    if (!fs.existsSync(tmpPath)) {
+      fs.mkdirSync(tmpPath);
+      console.log("Directory is created.");
+    } else {
+      console.log("Directory already exists.");
+    }
+  } catch (err) {
+    console.error(err);
+  }
+
+  // Apply the idea 3
+  console.time("drain_log_sync");
+  // Extract all logs and store them on the disk depending on there date
+  for (let logSourceIndex = 0; logSourceIndex < logSources.length; logSourceIndex++) {
+    let log = undefined;
+    // drain all logs per LogSource until there is none
+    while ((log = logSources[logSourceIndex].pop())) {
+      // create the filename with the date in this format YYYY-MM-DD and remove the time from it
+      const fileDateFormatName = new Date(log.date).toJSON().split("T")[0];
+      const filePath = `${tmpPath}/${fileDateFormatName}.txt`;
+      // create a modified duplicate of the log, due to date change to ms instead of plain Date object
+      const modifiedLog = {
+        date: log.date.getTime(),
+        msg: log.msg,
+      };
+      // Check if the file already exist so we can update it if we can
+      try {
+        fs.accessSync(filePath, fs.constants.F_OK);
+        fs.appendFileSync(filePath, JSON.stringify(modifiedLog) + ",");
+      } catch (e) {
+        // The file doesn't exist if it fails
+        // Create the file with this special name
+        // we serialize the content so the size would be smaller than storing the object and add the opening bracket and , in order to cumulate them
+        fs.writeFileSync(filePath, "[" + JSON.stringify(modifiedLog) + ",");
+      }
+    }
+  }
+  console.timeEnd("drain_log_sync");
+
+  // get the list of all files in the tmp folder
+  let files = fs.readdirSync(tmpPath);
+  console.time("heapsort_files_sync");
+  // Sort this list chronologycaly
+  files = heapSort(files);
+  console.timeEnd("heapsort_files_sync");
+
+  /**
+   *  on each file:
+   *  - update the content with open and close braket and remove last coma
+   *  - the content should be parsed and create an array
+   *  - sorting this array
+   *  - print them one by one
+   *
+   * */
+  for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+    try {
+      let data = fs.readFileSync(`${tmpPath}/${files[fileIndex]}`, "utf-8");
+
+      // remove the last coma and add the closing bracket before parsing
+      data = data.slice(0, -1) + "]";
+      let parsedData = JSON.parse(data);
+
+      // sort all logs of this date chronologically
+      parsedData = heapSortByDate(parsedData);
+
+      // print all logs until we cleared this file
+      while (parsedData.length > 0) {
+        const log = parsedData[0];
+        // Need to cast the fileName from string to a number that the Date can convert
+        printer.print({
+          date: new Date(+log.date),
+          msg: log.msg,
+        });
+
+        // Remove the first log from this list
+        parsedData.splice(0, 1);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  printer.done();
+
+  // remove the directory
+  fs.rmdirSync(tmpPath, { recursive: true });
+  console.log(`${tmpPath} is deleted!`);
+
+  return console.log("Sync sort complete.");
+  /**
+   * Remarks
+   * Seems to be a good compromise between memory usage and execution time for this kind of process
+   * One way to improve it (maybe), could be to change the fileName to the format YYYYMMDD_HHMMSS
+   *  It gives a smaller amount of data per file but much more files to process too
+   * More logSource will result in longer exeuction time if using 1 machine,
+   *  So we could split the amount of logSource between multiple worker (on the cloud) and store them in a place accessible
+   * Performance test
+   * - 50 000 (around 45min with FS)
+   * 
+      drain_log_sync: 2341560.448ms
+      heapsort_files_sync: 0.349ms
+
+      ***********************************
+      Logs printed:            11980514
+      Time taken (s):          3956.399
+      Logs/s:                  3028.13593876654
+      ***********************************
+
+      as a reminder, here is a result with the highest amount of logSource (40000) without the File System
+      - 40 000 (no FS):
+
+      drain_log_sync: 11606.216ms
+      heap_sort_sync: 64032.961ms
+      print_sync: 9980.965ms
+
+      ***********************************
+      Logs printed:            9579268
+      Time taken (s):          9.981
+      Logs/s:                  959750.3256186754
+      ***********************************
+   *
+   */
 };
-
-// if (!logSources) {
-//   return console.log("Please provide a real list of source, this one is empty!");
-// }
-
-// const tmpPath = "./tmp";
-// // create new directory
-// try {
-//   // first check if directory already exists
-//   if (!fs.existsSync(tmpPath)) {
-//     fs.mkdirSync(tmpPath);
-//     console.log("Directory is created.");
-//   } else {
-//     console.log("Directory already exists.");
-//   }
-// } catch (err) {
-//   console.error(err);
-// }
-
-// console.time("drain_log_sync");
-// // extract all logs per LogSource and create a file for each log, using the date as a fileName
-// for (let logSourceIndex = 0; logSourceIndex < logSources.length; logSourceIndex++) {
-//   let log = undefined;
-//   while ((log = logSources[logSourceIndex].pop())) {
-//     // Turn the date into number for easier storage and comparison between date later on
-//     fs.writeFileSync(`${tmpPath}/${log.date.getTime()}.txt`, log.msg);
-//   }
-// }
-// console.timeEnd("drain_log_sync");
-
-// // read all files in the tmp folder
-// const files = fs.readdirSync(tmpPath);
-
-// // Sort the datetime chronologycaly
-// heapSortAlgo(files);
-
-// // Print content of the all log files
-// for (let dateIndex = 0; dateIndex < files.length; dateIndex++) {
-//   try {
-//     const data = fs.readFileSync(`${tmpPath}/${files[dateIndex]}`, "utf-8");
-//     // Need to cast the fileName from string to a number that the Date can convert
-//     printer.print({
-//       date: new Date(+files[dateIndex].split(".")[0]),
-//       msg: data,
-//     });
-//   } catch (error) {
-//     console.error(error);
-//   }
-// }
-
-// printer.done();
-
-// // remove the directory
-// fs.rmdirSync(tmpPath, { recursive: true });
-// console.log(`${tmpPath} is deleted!`);
-
-// return console.log("Sync sort complete.");
-// /**
-//  * Remarks
-//  * Using the file system (write and read) make the process ultimately slow!
-//  * Even with just 10000....
-//  * Honeslty, I have no idea if this way is the most efficient, but at least the memory seems to be better with this one
-//  *
-//   * here are one of the best result I have with 40 000 (no FS):
-//     -      drain_log_sync: 11606.216ms
-//     -      heap_sort_sync: 64032.961ms
-//     -      print_sync: 9980.965ms
-//     -
-//     -      ***********************************
-//     -      Logs printed:            9579268
-//     -      Time taken (s):          9.981
-//     -      Logs/s:                  959750.3256186754
-//     -      ***********************************
-
-//     -
-
-//  */
