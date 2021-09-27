@@ -2,45 +2,7 @@
 
 const P = require("bluebird");
 const fs = require("fs").promises;
-
-// Heap Sort Algo - originaly fom (https://www.educba.com/sorting-algorithms-in-javascript/)
-let arrLength;
-function heapRoot(items, i) {
-  const left = 2 * i + 1;
-  const right = 2 * i + 2;
-  let max = i;
-  if (left < arrLength && items[left] > items[max]) {
-    max = left;
-  }
-  if (right < arrLength && items[right] > items[max]) {
-    max = right;
-  }
-  if (max != i) {
-    swap(items, i, max);
-    heapRoot(items, max);
-  }
-}
-
-function swap(items, index_A, index_B) {
-  var temp = items[index_A];
-  items[index_A] = items[index_B];
-  items[index_B] = temp;
-}
-
-function heapSortAlgo(items) {
-  console.time("heap_sort_async");
-  arrLength = items.length;
-  for (let i = Math.floor(arrLength / 2); i >= 0; i -= 1) {
-    heapRoot(items, i);
-  }
-
-  for (let j = items.length - 1; j > 0; j--) {
-    swap(items, 0, j);
-    arrLength--;
-    heapRoot(items, 0);
-  }
-  console.timeEnd("heap_sort_async");
-}
+const { heapSort, heapSortByDate } = require("./helpers/heap-sort");
 
 // Print all entries, across all of the *async* sources, in chronological order.
 
@@ -51,13 +13,32 @@ module.exports = (logSources, printer) => {
     const drainSourceLog = async (logSource) => {
       const log = await logSource.popAsync();
       if (log) {
+        // create the filename with the date in this format YYYY-MM-DD and remove the time from it
+        const fileDateFormatName = new Date(log.date).toJSON().split("T")[0];
+        const filePath = `${tmpPath}/${fileDateFormatName}.txt`;
+        // create a modified duplicate of the log, due to date change to ms instead of plain Date object
+        const modifiedLog = {
+          date: log.date.getTime(),
+          msg: log.msg,
+        };
+        // Check if the file already exist so we can update it if we can
         try {
-          // Create a file with these informations
-          await fs.writeFile(`${tmpPath}/${log.date.getTime()}.txt`, log.msg);
+          await fs.access(filePath);
+          await fs.appendFile(filePath, JSON.stringify(modifiedLog) + ",");
           // look for the next log
           return await drainSourceLog(logSource);
-        } catch (error) {
-          console.log(error);
+        } catch (e) {
+          // The file doesn't exist if it fails
+          // Create the file with this special name
+          // we serialize the content so the size would be smaller than storing the object and add the opening bracket and , in order to cumulate them
+          try {
+            await fs.writeFile(filePath, JSON.stringify(modifiedLog) + ",");
+
+            // look for the next log
+            return await drainSourceLog(logSource);
+          } catch (error) {
+            console.error(error);
+          }
         }
       } else {
         return log;
@@ -67,16 +48,21 @@ module.exports = (logSources, printer) => {
     /**
      * With popAsync, we can have multiple sources calling popAsync concurently
      *
-     * so the idea is the same as before
+     * Update with the idea from sync
      *  create a tmp folder
      *
-     *  extract all logs, concurrently is not possible when writting files, and create 1 file for each
+     *  extract all logs, concurrently is possible apparently,
+     *    create or update the file where the fileName will have the same date (format YYYYMMDD)
      *
      *  get the list of files
      *
      *  sort this list with Heap Sort
      *
-     *  print them all!
+     *  for each file
+     *  - update the content with close braket and remove last coma
+     *  - the content should be parsed and create an array
+     *  - sorting this array
+     *  - print them one by one
      */
 
     if (!logSources) {
@@ -98,10 +84,12 @@ module.exports = (logSources, printer) => {
       // Here we are loading each logSource into a promise that is stored in the concurrentPromises
       let concurrentPromises = [];
       for (let sourceIndex = 0; sourceIndex < logSources.length; sourceIndex++) {
+        // await drainSourceLog(logSources[sourceIndex]);
+        // concurrently
         concurrentPromises.push(drainSourceLog(logSources[sourceIndex]));
       }
-      // fire all stored promises in concurrency for a quick response
-      // No need to worry about the logList, the drainSourceLog is taking care or updating it
+      // fire all stored promises an run them concurrently , { concurrency: 10 } for a quick response
+      // No need to worry about the creating or updating files, the drainSourceLog is taking care of it
       await P.map(concurrentPromises, () => {});
     } catch (error) {
       console.error("Something went wrong :/ ", error);
@@ -110,30 +98,48 @@ module.exports = (logSources, printer) => {
     console.timeEnd("drain_log_async");
 
     // read all files in the tmp folder
-    const files = await fs.readdir(tmpPath);
+    let files = await fs.readdir(tmpPath);
 
+    console.time("heapsort_files_async");
     // sort them chronologicaly
-    heapSortAlgo(files);
+    files = heapSort(files);
+    console.timeEnd("heapsort_files_async");
 
-    // print
-    for (let logIndex = 0; logIndex < files.length; logIndex++) {
+    // Print all logs for each date
+    for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
       try {
-        const data = await fs.readFile(`${tmpPath}/${files[logIndex]}`, "utf-8");
-        // Need to cast the fileName from string to a number that the Date can convert
-        printer.print({
-          date: new Date(+files[logIndex].split(".")[0]),
-          msg: data,
-        });
+        let data = await fs.readFile(`${tmpPath}/${files[fileIndex]}`, "utf-8");
+
+        // remove the last coma and add the closing bracket before parsing
+        data = "[" + data.slice(0, -1) + "]";
+        let parsedData = JSON.parse(data);
+
+        // sort all logs of this date chronologically
+        parsedData = heapSortByDate(parsedData);
+
+        // print all logs until we cleared this file
+        while (parsedData.length > 0) {
+          const log = parsedData[0];
+          // Need to cast the fileName from string to a number that the Date can convert
+          printer.print({
+            date: new Date(+log.date),
+            msg: log.msg,
+          });
+
+          // Remove the first log from this list
+          parsedData.splice(0, 1);
+        }
       } catch (error) {
         console.error(error);
       }
     }
 
+    printer.done();
+
     // remove the directory
     await fs.rmdir(tmpPath, { recursive: true });
     console.log(`${tmpPath} is deleted!`);
 
-    printer.done();
     resolve(console.log("Async sort complete."));
 
     /**
@@ -155,3 +161,59 @@ module.exports = (logSources, printer) => {
      */
   });
 };
+
+// if (!logSources) {
+//   resolve(console.log("Please provide a real list of source, this one is empty!"));
+// }
+
+// // create new directory
+// try {
+//   await fs.mkdir(tmpPath);
+//   // first check if directory already exists
+//   console.log("Directory is created.");
+// } catch (err) {
+//   console.log("Directory already exists.");
+// }
+
+// console.time("drain_log_async");
+// // get all logs
+// try {
+//   // Here we are loading each logSource into a promise that is stored in the concurrentPromises
+//   let concurrentPromises = [];
+//   for (let sourceIndex = 0; sourceIndex < logSources.length; sourceIndex++) {
+//     concurrentPromises.push(drainSourceLog(logSources[sourceIndex]));
+//   }
+//   // fire all stored promises in concurrency for a quick response
+//   // No need to worry about the logList, the drainSourceLog is taking care or updating it
+//   await P.map(concurrentPromises, () => {});
+// } catch (error) {
+//   console.error("Something went wrong :/ ", error);
+//   reject(error);
+// }
+// console.timeEnd("drain_log_async");
+
+// // read all files in the tmp folder
+// const files = await fs.readdir(tmpPath);
+
+// // sort them chronologicaly
+// heapSortAlgo(files);
+
+// // print
+// for (let logIndex = 0; logIndex < files.length; logIndex++) {
+//   try {
+//     const data = await fs.readFile(`${tmpPath}/${files[logIndex]}`, "utf-8");
+//     // Need to cast the fileName from string to a number that the Date can convert
+//     printer.print({
+//       date: new Date(+files[logIndex].split(".")[0]),
+//       msg: data,
+//     });
+//   } catch (error) {
+//     console.error(error);
+//   }
+// }
+
+// // remove the directory
+// await fs.rmdir(tmpPath, { recursive: true });
+// console.log(`${tmpPath} is deleted!`);
+
+// printer.done();
