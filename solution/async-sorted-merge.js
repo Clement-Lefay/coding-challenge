@@ -148,6 +148,21 @@ module.exports = (logSources, printer) => {
      * This implementation has too much writing at the same time and can reach 5 000 logSources.
      * At 10 000 logSources, the process failed because too many files are written at the same time
      * 
+     * One way to improve it
+     *  idea 1
+     *    in the drainSourceLog(), create an object that wil contains a key/value pair with
+     *    {
+     *      [date in format YYYYMMDD] : [list of logs on this date]
+     *    }
+     *    create a file with the key name and write the content inside
+     *  The line 94 with ( await P.map(concurrentPromises, () => {}, { concurrency: 10 });) will not be used anymore
+     *
+     *  Idea 2
+     *    in the drainSourceLog(), if log !== false
+     *      YES => add the log in an array and call drainSourceLog() with the array
+     *      NO  => read all logs in the array and write them, concurrently maybe
+     *  The line 94 with ( await P.map(concurrentPromises, () => {}, { concurrency: 10 });) will not be used anymore
+     *
      * Performance tests:
      * With the FS implementation with 5 000 logSources
         drain_log_async: 151894.300ms
