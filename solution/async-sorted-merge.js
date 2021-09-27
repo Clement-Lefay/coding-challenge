@@ -110,11 +110,13 @@ module.exports = (logSources, printer) => {
     console.time("drain_log_async");
     // get all logs
     try {
+      // @IDEA - increase the amount of sources drained at the same time (from 2 to 10) qnd move the writing process when the sources is drained, insteat of doing it here
       for (let sourceIndex = 0; sourceIndex < logSources.length; sourceIndex++) {
         // Get all promises together of this source, for a parallele execution later
         let concurrentPromises = [];
         const allLogs = await drainSourceLog(logSources[sourceIndex]);
         // for each dateKey, add the writeLog promise to the list
+        // @TODO Do some performance test between this for...in and using Object.entries() and going through each key/value pair
         for (const log in allLogs) {
           const filePath = `${tmpPath}/${log}.txt`;
           concurrentPromises.push(writeLogToFile(filePath, allLogs[log]));
@@ -176,8 +178,10 @@ module.exports = (logSources, printer) => {
     /**
      * Remarks
      * This implementation take at most 4s per sources (in average), that is quite long for a asynchronous solution I think.
-     * To match the same amount of logSources the sync solution could process (50000), it would take around 55 min to process
-     * The actual solution is limited by the amount of files that can be open and/or write at the same time that is why it is slow.
+     * To match the same amount of logSources the sync solution could process (50000), it is still ongoing after 3hours of processing.
+     * The actual solution is not optimized to fully used the asynchronous way when extracting the sources.
+     * The writing seems to be one of the slow part and the file size is decent (less than 2 MB per file over 61 files) but maybe too much for just a string
+     *  Splitting into more files could be a solution and having more promises runnning in parallel could be better
      *
      * One way to improve is to use a database instead of writing on the disk of the computer/server.
      *  We could save more data at the same time and have more servers/worker running at the same time to process all the logSources
