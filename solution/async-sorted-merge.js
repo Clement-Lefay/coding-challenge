@@ -12,12 +12,13 @@ module.exports = (logSources, printer) => {
 
     /**
      * Go through the logSource until it is totally drained and return a logs object, with each key is a date and the value are a list of logs of this date
+     * The average time to drain an entire source is around 4s and cannot be reduced (15ms for each popAsync() * 250 logs in average = 3750ms)
      * @param {Object} logSource
      * @param {Object} logs
      * @returns [log]
      */
     const drainSourceLog = async (logSource, logs = {}) => {
-      const log = await logSource.popAsync();
+      const log = await logSource.popAsync(); // average time of processe = 15.00ms
       if (log) {
         // create the key to store on this format - YYYY-MMM-DD
         const dateKey = log.date.toJSON().split("T")[0];
@@ -38,6 +39,16 @@ module.exports = (logSources, printer) => {
         return await drainSourceLog(logSource, logs);
       } else {
         // we drained everything from this source, so we can return all the logs we found
+        // Get all promises together of this source, for a parallele execution later
+        let concurrentPromises = [];
+        // for each dateKey, add the writeLog promise to the list
+        for (const log in logs) {
+          const filePath = `${tmpPath}/${log}.txt`;
+          concurrentPromises.push(writeLogToFile(filePath, logs[log]));
+        }
+        // we can fire up to 1000 promises concurrently since they will not touch the same file.
+        // 1000 is a safe value since NodeJs restrits to 1024 open file at the same time
+        await P.map(concurrentPromises, () => {}, { concurrency: 1000 });
         return logs;
       }
     };
@@ -64,7 +75,6 @@ module.exports = (logSources, printer) => {
             //  stringify the value of this dateKey, remove the closing bracket adn the end and add a coma for easier addition later on
             // We could use replace() but it may corrupt the content of the log
             const fileContent = JSON.stringify(log).slice(0, -1) + ",";
-            // The flag "a" make sure it would write at the end of the file { flag: "a" }
             await fs.writeFile(fileName, fileContent);
             resolve();
           } catch (error) {
@@ -81,7 +91,7 @@ module.exports = (logSources, printer) => {
      *  create a tmp folder
      *
      *  extract all logs, concurrently is possible apparently,
-     *    create or update the file where the fileName will have the same date (format YYYYMMDD)
+     *    create or update the file where the fileName will have the same date (format YYYY-MM-DD)
      *
      *  get the list of files
      *
@@ -110,20 +120,9 @@ module.exports = (logSources, printer) => {
     console.time("drain_log_async");
     // get all logs
     try {
-      // @IDEA - increase the amount of sources drained at the same time (from 2 to 10) qnd move the writing process when the sources is drained, insteat of doing it here
       for (let sourceIndex = 0; sourceIndex < logSources.length; sourceIndex++) {
-        // Get all promises together of this source, for a parallele execution later
-        let concurrentPromises = [];
-        const allLogs = await drainSourceLog(logSources[sourceIndex]);
-        // for each dateKey, add the writeLog promise to the list
-        // @TODO Do some performance test between this for...in and using Object.entries() and going through each key/value pair
-        for (const log in allLogs) {
-          const filePath = `${tmpPath}/${log}.txt`;
-          concurrentPromises.push(writeLogToFile(filePath, allLogs[log]));
-        }
-        // we can fire 1000 promises concurrently since they will not touch the same file.
-        // 1000 is a safe value since NodeJs restrits to 1024 open file at the same time
-        await P.map(concurrentPromises, () => {}, { concurrency: 1000 });
+        process.stdout.write(` Processing source n°${sourceIndex + 1}/${logSources.length} \r`);
+        await drainSourceLog(logSources[sourceIndex]);
       }
     } catch (error) {
       console.error("Something went wrong :/ ", error);
@@ -177,11 +176,11 @@ module.exports = (logSources, printer) => {
 
     /**
      * Remarks
-     * This implementation take at most 4s per sources (in average), that is quite long for a asynchronous solution I think.
-     * To match the same amount of logSources the sync solution could process (50000), it is still ongoing after 3hours of processing.
-     * The actual solution is not optimized to fully used the asynchronous way when extracting the sources.
-     * The writing seems to be one of the slow part and the file size is decent (less than 2 MB per file over 61 files) but maybe too much for just a string
-     *  Splitting into more files could be a solution and having more promises runnning in parallel could be better
+     * This implementation take at most 4s per sources (in average) and cannot be reduced due to how the popAsync() works.
+     * To match the same amount of logSources the sync solution could process (50000), it takes much more time to see the end, more than 2 hours.
+     * The actual solution could be improve but my investigations on running at the same time multiple drainSourceLog() doesn't reduce the time to process
+     *  Splitting into more files would reduce the size of all files when a lot of logSources are provided
+     *    in the case where the file is big (more than 100MB maybe?), we could use a library like, 'stream-json', to read files as streams
      *
      * One way to improve is to use a database instead of writing on the disk of the computer/server.
      *  We could save more data at the same time and have more servers/worker running at the same time to process all the logSources

@@ -78,6 +78,7 @@ module.exports = (logSources, printer) => {
   console.time("drain_log_sync");
   // Extract all logs and store them on the disk depending on there date
   for (let logSourceIndex = 0; logSourceIndex < logSources.length; logSourceIndex++) {
+    process.stdout.write(` Processing source n°${logSourceIndex + 1}/${logSources.length} \r`);
     let log = undefined;
     // drain all logs per LogSource until there is none
     while ((log = logSources[logSourceIndex].pop())) {
