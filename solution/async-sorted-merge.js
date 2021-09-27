@@ -10,40 +10,68 @@ module.exports = (logSources, printer) => {
   return new Promise(async (resolve, reject) => {
     const tmpPath = "./tmp";
 
-    const drainSourceLog = async (logSource) => {
+    /**
+     * Go through the logSource until it is totally drained and return a logs object, with each key is a date and the value are a list of logs of this date
+     * @param {Object} logSource
+     * @param {Object} logs
+     * @returns [log]
+     */
+    const drainSourceLog = async (logSource, logs = {}) => {
       const log = await logSource.popAsync();
       if (log) {
-        // create the filename with the date in this format YYYY-MM-DD and remove the time from it
-        const fileDateFormatName = new Date(log.date).toJSON().split("T")[0];
-        const filePath = `${tmpPath}/${fileDateFormatName}.txt`;
-        // create a modified duplicate of the log, due to date change to ms instead of plain Date object
+        // create the key to store on this format - YYYY-MMM-DD
+        const dateKey = log.date.toJSON().split("T")[0];
+        // cast the date into number for easier storage
         const modifiedLog = {
           date: log.date.getTime(),
           msg: log.msg,
         };
-        // Check if the file already exist so we can update it if we can
+        // check if it exist in the logs object following this format {dateKey: [log, log, log,...]}
+        if (!logs[dateKey]) {
+          // Add the entry with the value = [log]
+          logs[dateKey] = [modifiedLog];
+        } else {
+          // insert the modifiedLog into the array list
+          logs[dateKey] = [...logs[dateKey], modifiedLog];
+        }
+        // call the next drainSourceLog and pass this object
+        return await drainSourceLog(logSource, logs);
+      } else {
+        // we drained everything from this source, so we can return all the logs we found
+        return logs;
+      }
+    };
+
+    /**
+     *  write into the existing or new file with fileName the log
+     * @param {Object} fileName
+     * @param {Object} log
+     * @returns Promise<void>
+     */
+    const writeLogToFile = (fileName, log) => {
+      return new Promise(async (resolve, reject) => {
         try {
-          await fs.access(filePath);
-          await fs.appendFile(filePath, JSON.stringify(modifiedLog) + ",");
-          // look for the next log
-          return await drainSourceLog(logSource);
+          //  stringify the value of this dateKey, remove the opening and closing bracket around the log and add a coma for easier addition later on
+          // We could use replace() but it may corrupt the content of the log
+          const fileContent = JSON.stringify(log).substring(1).slice(0, -1) + ",";
+          await fs.access(fileName);
+          await fs.appendFile(fileName, fileContent);
+          resolve();
         } catch (e) {
           // The file doesn't exist if it fails
           // Create the file with this special name
-          // we serialize the content so the size would be smaller than storing the object and add the opening bracket and , in order to cumulate them
           try {
-            // The flag "a" make sure it would write at the end of the file
-            await fs.writeFile(filePath, JSON.stringify(modifiedLog) + ",", { flag: "a" });
-
-            // look for the next log
-            return await drainSourceLog(logSource);
+            //  stringify the value of this dateKey, remove the closing bracket adn the end and add a coma for easier addition later on
+            // We could use replace() but it may corrupt the content of the log
+            const fileContent = JSON.stringify(log).slice(0, -1) + ",";
+            // The flag "a" make sure it would write at the end of the file { flag: "a" }
+            await fs.writeFile(fileName, fileContent);
+            resolve();
           } catch (error) {
-            console.error(error);
+            reject(error);
           }
         }
-      } else {
-        return log;
-      }
+      });
     };
 
     /**
@@ -82,16 +110,19 @@ module.exports = (logSources, printer) => {
     console.time("drain_log_async");
     // get all logs
     try {
-      // Here we are loading each logSource into a promise that is stored in the concurrentPromises
-      let concurrentPromises = [];
       for (let sourceIndex = 0; sourceIndex < logSources.length; sourceIndex++) {
-        // await drainSourceLog(logSources[sourceIndex]);
-        // concurrently
-        concurrentPromises.push(drainSourceLog(logSources[sourceIndex]));
+        // Get all promises together of this source, for a parallele execution later
+        let concurrentPromises = [];
+        const allLogs = await drainSourceLog(logSources[sourceIndex]);
+        // for each dateKey, add the writeLog promise to the list
+        for (const log in allLogs) {
+          const filePath = `${tmpPath}/${log}.txt`;
+          concurrentPromises.push(writeLogToFile(filePath, allLogs[log]));
+        }
+        // we can fire 1000 promises concurrently since they will not touch the same file.
+        // 1000 is a safe value since NodeJs restrits to 1024 open file at the same time
+        await P.map(concurrentPromises, () => {}, { concurrency: 1000 });
       }
-      // fire all stored promises an run them concurrently for a quick response
-      // No need to worry about the creating or updating files, the drainSourceLog is taking care of it
-      await P.map(concurrentPromises, () => {}, { concurrency: 10 });
     } catch (error) {
       console.error("Something went wrong :/ ", error);
       reject(error);
@@ -100,7 +131,6 @@ module.exports = (logSources, printer) => {
 
     // read all files in the tmp folder
     let files = await fs.readdir(tmpPath);
-
     console.time("heapsort_files_async");
     // sort them chronologicaly
     files = heapSort(files);
@@ -112,7 +142,7 @@ module.exports = (logSources, printer) => {
         let data = await fs.readFile(`${tmpPath}/${files[fileIndex]}`, "utf-8");
 
         // remove the last coma and add the closing bracket before parsing
-        data = "[" + data.slice(0, -1) + "]";
+        data = data.slice(0, -1) + "]";
         let parsedData = JSON.parse(data);
 
         // sort all logs of this date chronologically
@@ -145,34 +175,15 @@ module.exports = (logSources, printer) => {
 
     /**
      * Remarks
-     * This implementation has too much writing at the same time and can reach 5 000 logSources.
-     * At 10 000 logSources, the process failed because too many files are written at the same time
+     * This implementation take at most 4s per sources (in average), that is quite long for a asynchronous solution I think.
+     * To match the same amount of logSources the sync solution could process (50000), it would take around 55 min to process
+     * The actual solution is limited by the amount of files that can be open and/or write at the same time that is why it is slow.
+     *
+     * One way to improve is to use a database instead of writing on the disk of the computer/server.
+     *  We could save more data at the same time and have more servers/worker running at the same time to process all the logSources
+     *
+     * Performance tests (with the console.log() from the printer commented):
      * 
-     * One way to improve it
-     *  idea 1
-     *    in the drainSourceLog(), create an object that wil contains a key/value pair with
-     *    {
-     *      [date in format YYYYMMDD] : [list of logs on this date]
-     *    }
-     *    create a file with the key name and write the content inside
-     *  The line 94 with ( await P.map(concurrentPromises, () => {}, { concurrency: 10 });) will not be used anymore
-     *
-     *  Idea 2
-     *    in the drainSourceLog(), if log !== false
-     *      YES => add the log in an array and call drainSourceLog() with the array
-     *      NO  => read all logs in the array and write them, concurrently maybe
-     *  The line 94 with ( await P.map(concurrentPromises, () => {}, { concurrency: 10 });) will not be used anymore
-     *
-     * Performance tests:
-     * With the FS implementation with 5 000 logSources
-        drain_log_async: 151894.300ms
-        heapsort_files_async: 0.671ms
-
-        ***********************************
-        Logs printed:            1198510
-        Time taken (s):          44.845
-        Logs/s:                  26725.610435946037
-        ***********************************
      *
      *  here is one of the result with 13 000 logSources (No FS)
           drain_log_async: 44530.759ms
