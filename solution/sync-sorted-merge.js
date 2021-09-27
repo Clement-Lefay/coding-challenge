@@ -27,7 +27,7 @@ module.exports = (logSources, printer) => {
    *
    * Idea 3
    *  for each source
-   *    each log would create/update a file who will have a name in  YYYYMMDD (originialy was YYYYMMDD_HHMMSS),
+   *    each log would create/update a file who will have a name in  YYYY-MM-DD (originialy was YYYYMMDD_HHMMSS),
    *    this format will make it easier to controle the size of the file and do a pre sort
    *    The content of the log will be stringify() (include a coma at the end for limitation)
    *  Reflexion: seems to be a good balance of sorting and dispatching data
@@ -82,7 +82,7 @@ module.exports = (logSources, printer) => {
     // drain all logs per LogSource until there is none
     while ((log = logSources[logSourceIndex].pop())) {
       // create the filename with the date in this format YYYY-MM-DD and remove the time from it
-      const fileDateFormatName = new Date(log.date).toJSON().split("T")[0];
+      const fileDateFormatName = log.date.toJSON().split("T")[0];
       const filePath = `${tmpPath}/${fileDateFormatName}.txt`;
       // create a modified duplicate of the log, due to date change to ms instead of plain Date object
       const modifiedLog = {
@@ -158,9 +158,14 @@ module.exports = (logSources, printer) => {
    * Seems to be a good compromise between memory usage and execution time for this kind of process
    * One way to improve it (maybe), could be to change the fileName to the format YYYYMMDD_HHMMSS
    *  It gives a smaller amount of data per file but much more files to process too
+   * Another way to improve
+   *  store the data in a DB to remove the time spent to read and write files (that are longer than accessing a DataBase)
+   *  and this dataBase can be in the cloud
    * More logSource will result in longer exeuction time if using 1 machine,
    *  So we could split the amount of logSource between multiple worker (on the cloud) and store them in a place accessible
-   * Performance test
+   *  Better result if we have multiple workers, with specific task such as draining the sources or print the logs, and talking to a Database
+   *
+   * Performance test (with the console.log() from the printer commented):
    * - 50 000 (around 45min with FS)
    * 
       drain_log_sync: 2341560.448ms
