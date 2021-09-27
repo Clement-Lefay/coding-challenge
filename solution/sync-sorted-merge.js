@@ -91,7 +91,7 @@ module.exports = (logSources, printer) => {
       };
       // Check if the file already exist so we can update it if we can
       try {
-        fs.accessSync(filePath, fs.constants.F_OK);
+        fs.accessSync(filePath);
         fs.appendFileSync(filePath, JSON.stringify(modifiedLog) + ",");
       } catch (e) {
         // The file doesn't exist if it fails
@@ -112,7 +112,7 @@ module.exports = (logSources, printer) => {
 
   /**
    *  on each file:
-   *  - update the content with open and close braket and remove last coma
+   *  - update the content with close braket and remove last coma
    *  - the content should be parsed and create an array
    *  - sorting this array
    *  - print them one by one
