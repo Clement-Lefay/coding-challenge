@@ -32,7 +32,8 @@ module.exports = (logSources, printer) => {
           // Create the file with this special name
           // we serialize the content so the size would be smaller than storing the object and add the opening bracket and , in order to cumulate them
           try {
-            await fs.writeFile(filePath, JSON.stringify(modifiedLog) + ",");
+            // The flag "a" make sure it would write at the end of the file
+            await fs.writeFile(filePath, JSON.stringify(modifiedLog) + ",", { flag: "a" });
 
             // look for the next log
             return await drainSourceLog(logSource);
@@ -88,9 +89,9 @@ module.exports = (logSources, printer) => {
         // concurrently
         concurrentPromises.push(drainSourceLog(logSources[sourceIndex]));
       }
-      // fire all stored promises an run them concurrently , { concurrency: 10 } for a quick response
+      // fire all stored promises an run them concurrently for a quick response
       // No need to worry about the creating or updating files, the drainSourceLog is taking care of it
-      await P.map(concurrentPromises, () => {});
+      await P.map(concurrentPromises, () => {}, { concurrency: 10 });
     } catch (error) {
       console.error("Something went wrong :/ ", error);
       reject(error);
@@ -144,76 +145,30 @@ module.exports = (logSources, printer) => {
 
     /**
      * Remarks
-     * Before applying the FS to this implementation, we were limited to 13 000 logSources.
-     * With how slow it becomes, I have no idea how long it will take
+     * This implementation has too much writing at the same time and can reach 5 000 logSources.
+     * At 10 000 logSources, the process failed because too many files are written at the same time
      * 
-     *  here are the previous result with 13000 (No FS)
-        -        drain_log_async: 44530.759ms
-        -        heap_sort_async: 13551.002ms
-        -        print_async: 2288.748ms
-        -
-        -        ***********************************
-        -        Logs printed:            3115871
-        -        Time taken (s):          2.288
-        -        Logs/s:                  1361831.730769231
-        -        ***********************************
+     * Performance tests:
+     * With the FS implementation with 5 000 logSources
+        drain_log_async: 151894.300ms
+        heapsort_files_async: 0.671ms
 
+        ***********************************
+        Logs printed:            1198510
+        Time taken (s):          44.845
+        Logs/s:                  26725.610435946037
+        ***********************************
+     *
+     *  here is one of the result with 13 000 logSources (No FS)
+          drain_log_async: 44530.759ms
+          heap_sort_async: 13551.002ms
+          print_async: 2288.748ms
+
+          ***********************************
+          Logs printed:            3115871
+          Time taken (s):          2.288
+          Logs/s:                  1361831.730769231
+          ***********************************
      */
   });
 };
-
-// if (!logSources) {
-//   resolve(console.log("Please provide a real list of source, this one is empty!"));
-// }
-
-// // create new directory
-// try {
-//   await fs.mkdir(tmpPath);
-//   // first check if directory already exists
-//   console.log("Directory is created.");
-// } catch (err) {
-//   console.log("Directory already exists.");
-// }
-
-// console.time("drain_log_async");
-// // get all logs
-// try {
-//   // Here we are loading each logSource into a promise that is stored in the concurrentPromises
-//   let concurrentPromises = [];
-//   for (let sourceIndex = 0; sourceIndex < logSources.length; sourceIndex++) {
-//     concurrentPromises.push(drainSourceLog(logSources[sourceIndex]));
-//   }
-//   // fire all stored promises in concurrency for a quick response
-//   // No need to worry about the logList, the drainSourceLog is taking care or updating it
-//   await P.map(concurrentPromises, () => {});
-// } catch (error) {
-//   console.error("Something went wrong :/ ", error);
-//   reject(error);
-// }
-// console.timeEnd("drain_log_async");
-
-// // read all files in the tmp folder
-// const files = await fs.readdir(tmpPath);
-
-// // sort them chronologicaly
-// heapSortAlgo(files);
-
-// // print
-// for (let logIndex = 0; logIndex < files.length; logIndex++) {
-//   try {
-//     const data = await fs.readFile(`${tmpPath}/${files[logIndex]}`, "utf-8");
-//     // Need to cast the fileName from string to a number that the Date can convert
-//     printer.print({
-//       date: new Date(+files[logIndex].split(".")[0]),
-//       msg: data,
-//     });
-//   } catch (error) {
-//     console.error(error);
-//   }
-// }
-
-// // remove the directory
-// await fs.rmdir(tmpPath, { recursive: true });
-// console.log(`${tmpPath} is deleted!`);
-
-// printer.done();

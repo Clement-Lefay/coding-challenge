@@ -54,10 +54,10 @@ function runSolutions(sourceCount) {
       for (let i = 0; i < sourceCount; i++) {
         asyncLogSources.push(new LogSource());
       }
-      // require("./solution/async-sorted-merge")(asyncLogSources, new Printer()).then(resolve).catch(reject);
+      require("./solution/async-sorted-merge")(asyncLogSources, new Printer()).then(resolve).catch(reject);
     });
   });
 }
 
 // Adjust this input to see how your solutions perform under various loads.
-runSolutions(50000);
+runSolutions(5000);
